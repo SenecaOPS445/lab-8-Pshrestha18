@@ -1,0 +1,86 @@
+---
+- name: OPS445 Lab8 Configuration for pshrestha18
+  hosts: pshrestha18
+  user: student
+  become: yes
+  vars:
+    seneca_id: 'pshrestha18' 
+    lab_count: 8
+    required_packages:
+      - httpd
+      - epel-release
+    packages_to_remove:
+      - tree
+
+  tasks:
+    - name: Update all packages
+      yum:
+        name: '*'
+        state: latest
+      tags: system_update
+
+    - name: Install required packages
+      yum:
+        name: "{{ required_packages }}"
+        state: present
+      notify: restart apache
+      tags: packages
+
+    - name: Remove unwanted packages
+      yum:
+        name: "{{ packages_to_remove }}"
+        state: absent
+      tags: packages
+
+    - name: Set system hostname
+      hostname:
+        name: "{{ seneca_id }}"
+      tags: configuration
+
+    - name: Create and configure primary user
+      block:
+        - name: Create user account
+          user:
+            name: "{{ seneca_id }}"
+            groups: wheel
+            shell: /bin/bash
+            create_home: yes
+            home: "/home/{{ seneca_id }}"
+
+        - name: Ensure .ssh directory exists
+          file:
+            path: "/home/{{ seneca_id }}/.ssh"
+            state: directory
+            owner: "{{ seneca_id }}"
+            group: "{{ seneca_id }}"
+            mode: '0700'
+
+        - name: Deploy authorized key
+          authorized_key:
+            user: "{{ seneca_id }}"
+            state: present
+            key: "{{ lookup('file', '/home/student/.ssh/id_rsa.pub') }}"
+      tags: user
+
+    - name: Create lab directory structure
+      file:
+        path: "/home/{{ seneca_id }}/ops445/lab{{ item }}"
+        state: directory
+        owner: "{{ seneca_id }}"
+        group: "{{ seneca_id }}"
+        mode: '0755'
+      loop: "{{ range(1, lab_count + 1)|list }}"
+      tags: directories
+      
+    - name: Ensure Apache is running
+      service:
+        name: httpd
+        enabled: yes
+        state: started
+      tags: apache
+
+  handlers:
+    - name: restart apache
+      service:
+        name: httpd
+        state: restarted
